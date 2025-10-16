@@ -1,125 +1,185 @@
-# 🦜️🔗 LangChain Tavily
+# 🦜️🔗 LangChain Bocha
 
-[![PyPI version](https://badge.fury.io/py/langchain-tavily.svg)](https://badge.fury.io/py/langchain-tavily)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Downloads](https://static.pepy.tech/badge/langchain-tavily)](https://pepy.tech/project/langchain-tavily)
 
-This package contains the LangChain integration with [Tavily](https://tavily.com/)
+这个包包含了 LangChain 与[博查搜索（Bocha Search）](https://www.bocha.ai/)的集成
 
 ```bash
-pip install -U langchain-tavily
+pip install -U langchain-bocha
 ```
-Don't miss out on these exciting new features! Check out the [full documentation](https://docs.tavily.com/) to learn more.
 
 ---
 
-## Installation
+## 安装
 
 ```bash
-pip install -U langchain-tavily
+pip install -U langchain-bocha
 ```
 
-### Credentials
+### 凭证
 
-We also need to set our Tavily API key. You can get an API key by visiting [this site](https://app.tavily.com/sign-in) and creating an account.
+我们需要设置博查 API 密钥。您可以通过访问[博查AI开放平台](https://open.bochaai.com)并创建账户来获取 API 密钥。
 
-```bash
+```python
 import getpass
 import os
 
-if not os.environ.get("TAVILY_API_KEY"):
-    os.environ["TAVILY_API_KEY"] = getpass.getpass("Tavily API key:\n")
+if not os.environ.get("BOCHA_API_KEY"):
+    os.environ["BOCHA_API_KEY"] = getpass.getpass("Bocha API key:\n")
 ```
 
-## Tavily Search
+## Bocha Search
 
-Here we show how to instantiate an instance of the Tavily search tool. The tool accepts various parameters to customize the search. After instantiation we invoke the tool with a simple query. This tool allows you to complete search queries using Tavily's Search API endpoint.
+这里我们展示如何实例化博查搜索工具。该工具接受各种参数来自定义搜索。实例化后，我们使用简单的查询调用该工具。该工具允许您使用博查的 Web Search API 端点完成搜索查询。
 
-### Instantiation
+### 🎯 结构化响应
 
-The tool accepts various parameters during instantiation:
+`BochaSearch` 工具返回标准的字典格式（JSON可序列化），但你可以选择将其转换为结构化的 `SearchResponse` 对象以获得类型安全：
 
-- `max_results` (optional, int): Maximum number of search results to return. Default is 5.
-- `topic` (optional, str): Category of the search. Can be "general", "news", or "finance". Default is "general".
-- `include_answer` (optional, bool | str): Include an answer to original query in results. Default is False. String options include "basic" (quick answer) or "advanced" (detailed answer). If True, defaults to "basic".
-- `include_raw_content` (optional,  bool | str): Include the cleaned and parsed HTML content of each search result. "markdown" returns search result content in markdown format. "text" returns the plain text from the results and may increase latency. If True, defaults to "markdown"
-- `include_images` (optional, bool): Include a list of query related images in the response. Default is False.
-- `include_image_descriptions` (optional, bool): Include descriptive text for each image. Default is False.
-- `include_favicon` (optional, bool): Whether to include the favicon URL for each result. Default is False.
-- `search_depth` (optional, str): Depth of the search, either "basic" or "advanced". Default is "basic".
-- `time_range` (optional, str): The time range back from the current date to filter results - "day", "week", "month", or "year". Default is None.
-- `include_domains` (optional, List[str]): List of domains to specifically include. Default is None.
-- `exclude_domains` (optional, List[str]): List of domains to specifically exclude. Default is None.
-- `country` (optional, str): Boost search results from a specific country. This will prioritize content from the selected country in the search results. Available only if topic is general.
+**选项1: 直接使用字典**（推荐用于Agent集成）
+```python
+from langchain_bocha import BochaSearch
 
-For a comprehensive overview of the available parameters, refer to the [Tavily Search API documentation](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+tool = BochaSearch()
+result_dict = tool.invoke({"query": "人工智能"})
+
+# 字典访问
+query = result_dict["queryContext"]["originalQuery"]
+pages = result_dict["webPages"]["value"]
+```
+
+**选项2: 转换为结构化对象**（推荐用于类型安全）
+```python
+from langchain_bocha import BochaSearch, SearchResponse
+
+tool = BochaSearch()
+result_dict = tool.invoke({"query": "人工智能"})
+
+# 转换为结构化对象以获得类型安全
+result = SearchResponse(**result_dict)
+
+# 类型安全的访问，IDE自动补全
+print(result.query_context.original_query)  # "人工智能"
+print(result.web_pages.total_estimated_matches)  # 1234567
+
+# 遍历结果
+for page in result.web_pages.value:
+    print(f"{page.name}: {page.url}")
+    if page.summary:
+        print(f"摘要: {page.summary}")
+```
+
+**结构化对象的优势**:
+- ✅ **类型安全**: IDE 自动补全和类型检查
+- ✅ **数据验证**: Pydantic 自动验证所有字段
+- ✅ **更好的文档**: 每个字段都有清晰的类型和描述
+- ✅ **易于使用**: 使用 `.` 访问属性而不是字典键
+
+### 实例化
+
+工具在实例化期间接受各种参数：
+
+- `count` (可选, int): 返回的最大搜索结果数量，范围 1-50。默认为 10。
+- `freshness` (可选, str): 搜索时间范围。默认为 "noLimit" (推荐)。
+  - `"noLimit"`: 不限时间（推荐，搜索算法会自动优化）
+  - `"oneDay"`: 一天内
+  - `"oneWeek"`: 一周内
+  - `"oneMonth"`: 一个月内
+  - `"oneYear"`: 一年内
+- `summary` (可选, bool): 是否为每个结果返回详细的文本摘要。默认为 False。
+- `include` (可选, str): 指定搜索的网站范围，多个域名使用 `|` 或 `,` 分隔，最多20个。
+- `exclude` (可选, str): 排除搜索的网站范围，多个域名使用 `|` 或 `,` 分隔，最多20个。
+
+有关可用参数的全面概述，请参考[博查 Web Search API 文档](https://bocha-ai.feishu.cn/wiki/RXEOw02rFiwzGSkd9mUcqoeAnNK)
 
 ```python
-from langchain_tavily import TavilySearch
+from langchain_bocha import BochaSearch
 
-tool = TavilySearch(
-    max_results=5,
-    topic="general",
-    # include_answer=False,
-    # include_raw_content=False,
-    # include_images=False,
-    # include_image_descriptions=False,
-    # include_favicon=False,
-    # search_depth="basic",
-    # time_range="day",
-    # include_domains=None,
-    # exclude_domains=None,
-    # country=None
+tool = BochaSearch(
+    count=10,
+    freshness="noLimit",  # 推荐使用，让搜索算法自动优化
+    summary=True,  # 获取详细摘要
+    # include="example.com|another.com",  # 可选：限制搜索域名
+    # exclude="exclude.com",  # 可选：排除某些域名
 )
 ```
 
-### Invoke directly with args
+### 直接使用参数调用
 
-The Tavily search tool accepts the following arguments during invocation:
+博查搜索工具在调用期间接受以下参数：
 
-- `query` (required): A natural language search query
-- The following arguments can also be set during invocation : `include_images`, `include_favicon`, `search_depth` , `time_range`, `include_domains`, `exclude_domains`
-- For reliability and performance reasons, certain parameters that affect response size cannot be modified during invocation: `include_answer` and `include_raw_content`. These limitations prevent unexpected context window issues and ensure consistent results.
+- `query` (必需): 自然语言搜索查询
+- 以下参数也可以在调用期间设置：`freshness`、`summary`、`include`、`exclude`
 
-NOTE: If you set an argument during instantiation this value will persist and overwrite the value passed during invocation.
+注意：如果您在实例化期间设置了参数，该值将持久化并覆盖调用期间传递的值。
 
 ```python
-# Basic query
-tool.invoke({"query": "What happened at the last wimbledon"})
+# 基本查询
+tool.invoke({"query": "博查搜索的最新功能是什么"})
+
+# 带时间范围的查询
+tool.invoke({
+    "query": "人工智能最新进展", 
+    "freshness": "oneWeek",
+    "summary": True
+})
+
+# 限制搜索域名
+tool.invoke({
+    "query": "Python教程",
+    "include": "python.org|docs.python.org"
+})
 ```
 
-output:
+输出：
 
-```bash
+```python
 {
- 'query': 'What happened at the last wimbledon',
- 'follow_up_questions': None,
- 'answer': None,
- 'images': [],
- 'results':
- [{'url': 'https://en.wikipedia.org/wiki/Wimbledon_Championships',
-   'title': 'Wimbledon Championships - Wikipedia',
-   'content': 'Due to the COVID-19 pandemic, Wimbledon 2020 was cancelled ...',
-   'score': 0.62365627198,
-   'raw_content': None},
-    ......................................................................
-    {'url': 'https://www.cbsnews.com/news/wimbledon-men-final-carlos-alcaraz-novak-djokovic/',
-    'title': "Carlos Alcaraz beats Novak Djokovic at Wimbledon men's final to ...",
-    'content': 'In attendance on Sunday was Catherine, the Princess of Wales ...',
-    'score': 0.5154731446,
-    'raw_content': None}],
-  'response_time': 2.3
+    "_type": "SearchResponse",
+    "queryContext": {
+        "originalQuery": "博查搜索的最新功能是什么"
+    },
+    "webPages": {
+        "webSearchUrl": "",
+        "totalEstimatedMatches": 1234567,
+        "value": [
+            {
+                "id": null,
+                "name": "博查AI开放平台",
+                "url": "https://open.bochaai.com",
+                "displayUrl": "https://open.bochaai.com",
+                "snippet": "博查AI开放平台是杭州博查搜索科技...",
+                "summary": "博查AI开放平台提供AI搜索、Web搜索、AI Agent等服务...",
+                "siteName": "open.bochaai.com",
+                "siteIcon": "https://th.bochaai.com/favicon?domain_url=...",
+                "datePublished": "2024-07-22T00:00:00+08:00",
+                "dateLastCrawled": "2024-07-22T00:00:00Z",
+                "cachedPageUrl": null,
+                "language": "zh"
+            },
+            ...
+        ],
+        "someResultsRemoved": false
+    },
+    "images": {
+        "value": [
+            {
+                "contentUrl": "https://...",
+                "thumbnailUrl": "https://...",
+                "name": "图片标题"
+            },
+            ...
+        ]
+    }
 }
 ```
 
-### Agent Tool Calling
+### Agent 工具调用
 
-We can use our tools directly with an agent executor by binding the tool to the agent. This gives the agent the ability to dynamically set the available arguments to the Tavily search tool.
-
-In the below example when we ask the agent to find "What is the most popular sport in the world? include only wikipedia sources" the agent will dynamically set the argments and invoke Tavily search tool : Invoking `tavily_search` with `{'query': 'most popular sport in the world', 'include_domains': ['wikipedia.org'], 'search_depth': 'basic'}`
+我们可以通过将工具绑定到 agent 来直接使用我们的工具与 agent executor。这使 agent 能够动态设置博查搜索工具的可用参数。
 
 ```python
-# !pip install -qU langchain langchain-openai langchain-tavily
+# !pip install -qU langchain langchain-openai langchain-bocha
 from typing import Any, Dict, Optional
 import datetime
 
@@ -127,367 +187,108 @@ from langchain.agents import create_openai_tools_agent, AgentExecutor
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
-from langchain_tavily import TavilySearch
+from langchain_bocha import BochaSearch
 from langchain.schema import HumanMessage, SystemMessage
 
-# Initialize LLM
+# 初始化 LLM
 llm = init_chat_model(model="gpt-4o", model_provider="openai", temperature=0)
 
-# Initialize Tavily Search Tool
-tavily_search_tool = TavilySearch(
-    max_results=5,
-    topic="general",
+# 初始化博查搜索工具
+bocha_search_tool = BochaSearch(
+    count=5,
+    summary=True,  # 获取详细摘要，更适合AI使用
 )
 
-# Set up Prompt with 'agent_scratchpad'
+# 设置包含 'agent_scratchpad' 的 Prompt
 today = datetime.datetime.today().strftime("%D")
 prompt = ChatPromptTemplate.from_messages([
-    ("system", f"""You are a helpful reaserch assistant, you will be given a query and you will need to
-    search the web for the most relevant information. The date today is {today}."""),
+    ("system", f"""你是一个有用的研究助手，你将被给予一个查询，你需要
+    在网络上搜索最相关的信息。今天的日期是 {today}。"""),
     MessagesPlaceholder(variable_name="messages"),
-    MessagesPlaceholder(variable_name="agent_scratchpad"),  # Required for tool calls
+    MessagesPlaceholder(variable_name="agent_scratchpad"),  # 工具调用所需
 ])
 
-# Create an agent that can use tools
+# 创建一个可以使用工具的 agent
 agent = create_openai_tools_agent(
     llm=llm,
-    tools=[tavily_search_tool],
+    tools=[bocha_search_tool],
     prompt=prompt
 )
 
-# Create an Agent Executor to handle tool execution
-agent_executor = AgentExecutor(agent=agent, tools=[tavily_search_tool], verbose=True)
+# 创建 Agent Executor 来处理工具执行
+agent_executor = AgentExecutor(agent=agent, tools=[bocha_search_tool], verbose=True)
 
-user_input =  "What is the most popular sport in the world? include only wikipedia sources"
+user_input = "请告诉我最近一周关于人工智能的重要新闻"
 
-# Construct input properly as a dictionary
+# 正确构造输入为字典
 response = agent_executor.invoke({"messages": [HumanMessage(content=user_input)]})
 ```
 
-## Tavily Extract
+## 特性
 
-Here we show how to instantiate an instance of the Tavily extract tool. After instantiation we invoke the tool with a list of URLs. This tool allows you to extract content from URLs using Tavily's Extract API endpoint.
+- **全网搜索**：从全网搜索任何网页信息和网页链接
+- **准确摘要**：结果准确、摘要完整，更适合 AI 使用
+- **时间范围过滤**：可配置搜索时间范围（推荐使用 noLimit 让算法自动优化）
+- **图片搜索**：API 自动返回相关图片
+- **详细摘要**：可选择是否显示详细文本摘要（summary 参数）
+- **域名过滤**：支持包含或排除特定域名
+- **Bing 兼容格式**：响应格式兼容 Bing Search API
 
-### Instantiation
+## API 参数说明
 
-The tool accepts various parameters during instantiation:
-
-- `extract_depth` (optional, str): The depth of the extraction, either "basic" or "advanced". Default is "basic ".
-- `include_images` (optional, bool): Whether to include images in the extraction. Default is False.
-- `include_favicon` (optional, bool): Whether to include the favicon URL for each result. Default is False.
-- `format` (optional, str): The format of the extracted web page content. "markdown" returns content in markdown format. "text" returns plain text and may increase latency.
-
-For a comprehensive overview of the available parameters, refer to the [Tavily Extract API documentation](https://docs.tavily.com/documentation/api-reference/endpoint/extract)
+### freshness (时间范围)
 
 ```python
-from langchain_tavily import TavilyExtract
+# 推荐使用 noLimit，让搜索算法自动优化
+tool = BochaSearch(freshness="noLimit")
 
-tool = TavilyExtract(
-    extract_depth="advanced",
-    include_images=False,
-    include_favicon=False,
-    format="markdown"
+# 其他选项
+tool = BochaSearch(freshness="oneDay")    # 一天内
+tool = BochaSearch(freshness="oneWeek")   # 一周内
+tool = BochaSearch(freshness="oneMonth")  # 一个月内
+tool = BochaSearch(freshness="oneYear")   # 一年内
+```
+
+### summary (文本摘要)
+
+```python
+# 默认不返回摘要
+tool = BochaSearch(summary=False)
+
+# 返回详细摘要，更适合AI使用
+tool = BochaSearch(summary=True)
+```
+
+### include / exclude (域名过滤)
+
+```python
+# 只搜索特定域名
+tool = BochaSearch(include="python.org|stackoverflow.com")
+
+# 排除特定域名
+tool = BochaSearch(exclude="example.com|spam.com")
+
+# 可以同时使用
+tool = BochaSearch(
+    include="edu|gov",  # 只搜索教育和政府网站
+    exclude="ads.com"   # 但排除广告网站
 )
 ```
 
-### Invoke directly with args
+## API 文档
 
-The Tavily extract tool accepts the following arguments during invocation:
+更多详细信息，请访问：
+- [Web Search API 文档](https://bocha-ai.feishu.cn/wiki/RXEOw02rFiwzGSkd9mUcqoeAnNK)
+- [在 LangChain 中使用博查搜索API](https://bocha-ai.feishu.cn/wiki/XXCsw2Dyjiny8OkJl0KcWjyOnDb)
+- [博查AI开放平台](https://open.bochaai.com)
 
-- `urls` (required): A list of URLs to extract content from.
-- The parameters `extract_depth`, `include_images`, and `include_favicon` can also be set during invocation
+## 响应格式
 
-NOTE: If you set an argument during instantiation this value will persist and overwrite the value passed during invocation.
+博查 API 的响应格式兼容 Bing Search API，包括：
 
-```python
-# Extract content from a URL
-result = tool.invoke({
-    "urls": ["https://en.wikipedia.org/wiki/Lionel_Messi"]
-})
-```
+- **网页结果**：包括 name、url、snippet、summary、siteName、siteIcon、datePublished 等信息
+- **图片结果**：包括 contentUrl、thumbnailUrl、name 等信息
 
-output:
+## 许可证
 
-```bash
-{
-    'results': [{
-        'url': 'https://en.wikipedia.org/wiki/Lionel_Messi',
-        'raw_content': 'Lionel Messi\nLionel Andrés "Leo" Messi...',
-        'images': []
-    }],
-    'failed_results': [],
-    'response_time': 0.79
-}
-```
-
-## Tavily Crawl
-
-Here we show how to instantiate an instance of the Tavily crawl tool. After instantiation we invoke the tool with a URL. This tool allows you to crawl websites using Tavily's Crawl API endpoint.
-
-### Instantiation
-
-The tool accepts various parameters during instantiation:
-
-- `max_depth` (optional, int): Max depth of the crawl from base URL. Default is 1.
-- `max_breadth` (optional, int): Max number of links to follow per page. Default is 20.
-- `limit` (optional, int): Total number of links to process before stopping. Default is 50.
-- `instructions` (optional, str): Natural language instructions to guide the crawler. Default is None.
-- `select_paths` (optional, List[str]): Regex patterns to select specific URL paths. Default is None.
-- `select_domains` (optional, List[str]): Regex patterns to select specific domains. Default is None.
-- `exclude_paths` (optional, List[str]): Regex patterns to exclude URLs with specific path patterns 
-- `exclude_domains` (optional, List[str]): Regex patterns to exclude specific domains or subdomains from crawling 
-- `allow_external` (optional, bool): Allow following external domain links. Default is False.
-- `include_images` (optional, bool): Whether to include images in the crawl results.
-- `categories` (optional, str): Filter URLs by predefined categories. Can be "Careers", "Blogs", "Documentation", "About", "Pricing", "Community", "Developers", "Contact", or "Media". Default is None.
-- `extract_depth` (optional, str): Depth of content extraction, either "basic" or "advanced". Default is "basic".
-- `include_favicon` (optional, bool): Whether to include the favicon URL for each result. Default is False.
-- `format` (optional, str): The format of the extracted web page content. "markdown" returns content in markdown format. "text" returns plain text and may increase latency.
-
-For a comprehensive overview of the available parameters, refer to the [Tavily Crawl API documentation](https://docs.tavily.com/documentation/api-reference/endpoint/crawl)
-
-```python
-from langchain_tavily import TavilyCrawl
-
-tool = TavilyCrawl(
-    max_depth=1,
-    max_breadth=20,
-    limit=50,
-    # instructions=None,
-    # select_paths=None,
-    # select_domains=None,
-    # exclude_paths=None,
-    # exclude_domains=None,
-    # allow_external=False,
-    # include_images=False,
-    # categories=None,
-    # extract_depth=None,
-    # include_favicon=False,
-    # format=None
-)
-```
-
-### Invoke directly with args
-
-The Tavily crawl tool accepts the following arguments during invocation:
-- `url` (required): The root URL to begin the crawl.
-- All other parameters can also be set during invocation: `max_depth`, `max_breadth`, `limit`, `instructions`, `select_paths`, `select_domains`, `exclude_paths`, `exclude_domains`,`allow_external`, `include_images`, `categories`, `extract_depth`, and `include_favicon`
-
-NOTE: If you set an argument during instantiation this value will persist and overwrite the value passed during invocation.
-
-```python
-# Basic crawl of a website
-result = tool.invoke({
-    "url": "https://docs.tavily.com",
-    "instructions": "Find SDK documentation",
-    "categories": ["Documentation"]
-})
-```
-
-output:
-```bash
-{
-    'base_url': 'https://docs.tavily.com',
-    'results': [{
-        'url': 'https://docs.tavily.com/sdk/python',
-        'raw_content': 'Python SDK Documentation...',
-        'images': []
-    },
-    {
-        'url': 'https://docs.tavily.com/sdk/javascript',
-        'raw_content': 'JavaScript SDK Documentation...',
-        'images': []
-    }],
-    'response_time': 10.28
-}
-```
-
-## Tavily Map
-
-Here we show how to instantiate an instance of the Tavily Map tool. After instantiation we invoke the tool with a URL. This tool allows you to create a structured map of website URLs using Tavily's Map API endpoint.
-
-### Instantiation
-
-The tool accepts various parameters during instantiation:
-
-- `max_depth` (optional, int): Max depth of the mapping from base URL. Default is 1.
-- `max_breadth` (optional, int): Max number of links to follow per page. Default is 20.
-- `limit` (optional, int): Total number of links to process before stopping. Default is 50.
-- `instructions` (optional, str): Natural language instructions to guide the mapping.
-- `select_paths` (optional, List[str]): Regex patterns to select specific URL paths.
-- `select_domains` (optional, List[str]): Regex patterns to select specific domains.
-- `exclude_paths` (optional, List[str]): Regex patterns to exclude URLs with specific path patterns 
-- `exclude_domains` (optional, List[str]): Regex patterns to exclude specific domains or subdomains from mapping 
-- `allow_external` (optional, bool): Allow following external domain links. Default is False.
-- `categories` (optional, str): Filter URLs by predefined categories ("Careers", "Blogs", "Documentation", "About", "Pricing", "Community", "Developers", "Contact", "Media").
-
-For a comprehensive overview of the available parameters, refer to the [Tavily Map API documentation](https://docs.tavily.com/documentation/api-reference/endpoint/map)
-
-```python
-from langchain_tavily import TavilyMap
-
-tool = TavilyMap(
-    max_depth=2,
-    max_breadth=20,
-    limit=50,
-    # instructions=None,
-    # select_paths=None,
-    # select_domains=None,
-    # exclude_paths=None,
-    # exclude_domains=None,
-    # allow_external=False,
-    # categories=None,
-)
-```
-
-### Invoke directly with args
-
-The Tavily map tool accepts the following arguments during invocation:
-- `url` (required): The root URL to begin the mapping.
-- All other parameters can also be set during invocation: `max_depth`, `max_breadth`, `limit`, `instructions`, `select_paths`, `select_domains`, `exclude_paths`, `exclude_domains`, `allow_external`, and `categories`.
-
-NOTE: If you set an argument during instantiation this value will persist and overwrite the value passed during invocation.
-
-```python
-# Basic mapping of a website
-result = tool.invoke({
-    "url": "https://docs.tavily.com",
-    "instructions": "Find SDK documentation",
-    "categories": ["Documentation"]
-})
-```
-
-output:
-```bash
-{
-    'base_url': 'https://docs.tavily.com',
-    'results': ['https://docs.tavily.com/sdk', 'https://docs.tavily.com/sdk/python/reference', 'https://docs.tavily.com/sdk/javascript/reference', 'https://docs.tavily.com/sdk/python/quick-start', 'https://docs.tavily.com/sdk/javascript/quick-start']
-    'response_time': 10.28
-}
-```
-
-
-
-## Tavily Research Agent
-
-This example demonstrates how to build a powerful web research agent using Tavily's search and extract Langchain tools.
-
-### Features
-
-- Internet Search: Query the web for up-to-date information using Tavily's search API
-- Content Extraction: Extract and analyze specific content from web pages
-- Seamless Integration: Works with OpenAI's function calling capability for reliable tool use
-
-```python
-# !pip install -qU langchain langchain-openai langchain-tavily
-from typing import Any, Dict, Optional
-import datetime
-
-from langchain.agents import create_openai_tools_agent, AgentExecutor
-from langchain.chat_models import init_chat_model
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
-from langchain_tavily import TavilySearch, TavilyExtract
-from langchain.schema import HumanMessage, SystemMessage
-
-# Initialize LLM
-llm = ChatOpenAI(temperature=0, model="gpt-4o")
-
-# Initialize Tavily Search Tool
-tavily_search_tool = TavilySearch(
-    max_results=5,
-    topic="general",
-)
-# Initialize Tavily Extract Tool
-tavily_extract_tool = TavilyExtract()
-
-tools = [tavily_search_tool, tavily_extract_tool]
-
-# Set up Prompt with 'agent_scratchpad'
-today = datetime.datetime.today().strftime("%D")
-prompt = ChatPromptTemplate.from_messages([
-    ("system", f"""You are a helpful reaserch assistant, you will be given a query and you will need to
-    search the web for the most relevant information then extract content to gain more insights. The date today is {today}."""),
-    MessagesPlaceholder(variable_name="messages"),
-    MessagesPlaceholder(variable_name="agent_scratchpad"),  # Required for tool calls
-])
-# Create an agent that can use tools
-agent = create_openai_tools_agent(
-    llm=llm,
-    tools=tools,
-    prompt=prompt
-)
-
-# Create an Agent Executor to handle tool execution
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-user_input =  "Research the latest developments in quantum computing and provide a detailed summary of how it might impact cybersecurity in the next decade."
-
-# Construct input properly as a dictionary
-response = agent_executor.invoke({"messages": [HumanMessage(content=user_input)]})
-```
-
-## Tavily Search and Crawl Agent Example
-
-This example demonstrates how to build a powerful web research agent using Tavily's search and crawl Langchain tools to find and analyze information from websites.
-
-### Features
-
-- Internet Search: Query the web for up-to-date information using Tavily's search API
-- Website Crawling: Crawl websites to find specific information and content
-- Seamless Integration: Works with OpenAI's function calling capability for reliable tool use
-
-```python
-from typing import Any, Dict, Optional
-import datetime
-
-from langchain.agents import create_openai_tools_agent, AgentExecutor
-from langchain.chat_models import init_chat_model
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
-from langchain_tavily import TavilySearch, TavilyCrawl
-from langchain.schema import HumanMessage, SystemMessage
-
-# Initialize LLM
-llm = init_chat_model(model="gpt-4.1", model_provider="openai", temperature=0)
-
-# Initialize Tavily Search Tool
-tavily_search_tool = TavilySearch(
-    max_results=5,
-    topic="general",
-)
-
-tavily_crawl_tool = TavilyCrawl()
-
-# Set up Prompt with 'agent_scratchpad'
-today = datetime.datetime.today().strftime("%D")
-prompt = ChatPromptTemplate.from_messages([
-    ("system", f"""You are a helpful reaserch assistant, you will be given a query and you will need to
-    search the web and crawl the web for the most relevant information. The date today is {today}."""),
-    MessagesPlaceholder(variable_name="messages"),
-    MessagesPlaceholder(variable_name="agent_scratchpad"),  # Required for tool calls
-])
-
-# Create an agent that can use tools
-agent = create_openai_tools_agent(
-    llm=llm,
-    tools=[tavily_search_tool, tavily_crawl_tool],
-    prompt=prompt
-)
-
-# Create an Agent Executor to handle tool execution
-agent_executor = AgentExecutor(agent=agent, tools=[tavily_search_tool, tavily_crawl_tool], verbose=True)
-
-user_input =  "Find the base url of apple and then crawl the base url to find all iphone models"
-
-# Construct input properly as a dictionary
-response = agent_executor.invoke({"messages": [HumanMessage(content=user_input)]})
-```
-
-This example shows how to:
-1. Initialize both Tavily Search and Crawl tools
-2. Set up an agent with a custom prompt that includes the current date
-3. Create an agent executor that can use both tools
-4. Process a user query that requires both searching and crawling capabilities
-
-The agent will first use the search tool to find Apple's base URL, then use the crawl tool to explore the website and find information about iPhone models.
-
+本项目采用 MIT 许可证。

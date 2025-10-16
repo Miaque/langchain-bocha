@@ -3,14 +3,14 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "langchain-tavily"
-version = "0.2.12"
-description = "An integration package connecting Tavily and LangChain"
+name = "langchain-bocha"
+version = "0.1.0"
+description = "An integration package connecting Bocha Search and LangChain"
 authors = []
 readme = "README.md"
-repository = "https://github.com/tavily-ai/langchain-tavily"
+repository = "https://github.com/langchain-bocha/langchain-bocha"
 license = "MIT"
-include = ["langchain_tavily/py.typed"]
+include = ["langchain_bocha/py.typed"]
 
 [tool.mypy]
 disallow_untyped_defs = "True"
